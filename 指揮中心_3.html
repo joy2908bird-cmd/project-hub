@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ 專案指揮中心</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0f1e;color:#f1f5f9;font-family:'DM Sans','Noto Sans TC',sans-serif;min-height:100vh}
+  ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#1e293b;border-radius:2px}
+  input::placeholder,textarea::placeholder{color:#475569}
+  @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #app{display:flex;flex-direction:column;min-height:100vh}
+  header{padding:14px 22px;border-bottom:1px solid #1e293b;background:#0d1526;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  .logo{font-size:17px;font-weight:800;color:#fff}
+  .logo-sub{font-size:11px;color:#64748b;margin-top:2px}
+  nav{display:flex;gap:5px;flex-wrap:wrap}
+  .nb{padding:7px 13px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:transparent;color:#64748b;transition:all .15s}
+  .nb.active{background:#6366f1;color:#fff}
+  .body{display:flex;flex:1;overflow:hidden;height:calc(100vh - 58px)}
+  .sidebar{width:250px;border-right:1px solid #1e293b;background:#0d1526;overflow-y:auto;padding:14px 10px;flex-shrink:0}
+  .main{flex:1;overflow-y:auto;padding:22px}
+  .sec-title{font-size:11px;font-weight:700;color:#64748b;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
+  .proj-card{padding:11px 13px;border-radius:10px;cursor:pointer;margin-bottom:6px;transition:all .15s;border:1px solid transparent}
+  .proj-card:hover{background:#1e293b44}
+  .card{background:#0d1526;border:1px solid #1e293b;border-radius:14px;padding:18px 20px;margin-bottom:16px}
+  .inp{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:9px 12px;color:#f1f5f9;font-size:13.5px;outline:none;width:100%;font-family:inherit}
+  .inp:focus{border-color:#6366f1}
+  .btn{padding:9px 16px;border-radius:8px;color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;font-family:inherit;transition:all .15s}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:8px;align-items:center}
+  .badge{padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700}
+  .tag-pill{padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+  .progress-bar{height:3px;background:#1e293b;border-radius:99px;overflow:hidden;margin:5px 0 4px 14px}
+  .progress-fill{height:100%;border-radius:99px}
+  .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .todo-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b}
+  .idea-item{padding:8px 12px;background:#1e293b;border-radius:8px;margin-bottom:6px}
+  .chat-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+  .bubble{max-width:82%;padding:10px 14px;font-size:13.5px;line-height:1.6;white-space:pre-wrap}
+  .bubble.user{border-radius:18px 18px 4px 18px;background:#6366f1;color:#fff;align-self:flex-end}
+  .bubble.ai{border-radius:18px 18px 18px 4px;background:#1e293b;color:#f1f5f9;border:1px solid #334155;align-self:flex-start}
+  .chat-input-row{padding:12px 16px;border-top:1px solid #1e293b;display:flex;gap:8px}
+  .dots{display:flex;gap:4px;padding:8px 14px}
+  .dot-bounce{width:6px;height:6px;border-radius:50%;background:#6366f1}
+  .modal-bg{position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:999}
+  .modal{background:#0d1526;border:1px solid #334155;border-radius:16px;padding:26px;width:360px;max-width:90vw}
+  .save-bar{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .loading-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:14px;text-align:center;padding:20px}
+  .spinner{width:32px;height:32px;border:3px solid #1e293b;border-top-color:#6366f1;border-radius:50%;animation:spin 0.8s linear infinite}
+  .toast{position:fixed;bottom:24px;right:24px;background:#10b981;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;animation:fadeIn .2s ease}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const SB_URL = 'https://vsqypkiymavrupmxjcb.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzcXlwa2l5bWF2cnVwZm14amNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2ODA1NzUsImV4cCI6MjA5NTI1NjU3NX0.XftACrJfteJ8Nmxqr-BD_tjGYOX-topRO6-tFrTAKTc';
+
+const STATUS = {
+  active:{ label:'進行中', color:'#10b981' },
+  paused:{ label:'暫停',   color:'#f59e0b' },
+  done:  { label:'完成',   color:'#6366f1' },
+  idea:  { label:'構想中', color:'#94a3b8' },
+};
+const PRI_LABEL = { high:'高', medium:'中', low:'低' };
+const PRI_COLOR = { high:'#ef4444', medium:'#f59e0b', low:'#64748b' };
+
+// ── Supabase API ───────────────────────────────────────────────
+const headers = { 'Content-Type':'application/json', 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY };
+
+async function sbGet(table, query='') {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${query}`, { headers });
+  return r.json();
+}
+async function sbPost(table, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method:'POST', headers:{ ...headers, 'Prefer':'return=representation' },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+async function sbPatch(table, id, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method:'PATCH', headers:{ ...headers, 'Prefer':'return=representation' },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+async function sbDelete(table, id) {
+  await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'DELETE', headers });
+}
+
+// ── State ──────────────────────────────────────────────────────
+let S = {
+  projects:[], todos:[], ideas:[],
+  loading:true, saving:false, error:null,
+  selectedId:null, view:'board', aiProjectId:null,
+  localTodos:{}, dirtyTodos:{},
+  newTodoText:'', newIdeaText:'', globalText:'',
+  showNewProj:false, newProj:{ name:'', subtitle:'', tags:'', color:'#6366f1' },
+  chatMessages:[], chatInput:'', chatLoading:false,
+};
+function set(patch) {
+  Object.assign(S, typeof patch==='function'?patch(S):patch);
+  render();
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 2500);
+}
+
+// ── Data helpers ───────────────────────────────────────────────
+function getProjectTodos(pid) {
+  return S.todos.filter(t=>t.project_id===pid).map(t=>({
+    ...t,
+    done: S.dirtyTodos[t.id]!==undefined ? S.localTodos[t.id] : t.done,
+    isDirty: S.dirtyTodos[t.id]!==undefined,
+  }));
+}
+function getProjectIdeas(pid) { return S.ideas.filter(i=>i.project_id===pid); }
+function getGlobalIdeas() { return S.ideas.filter(i=>!i.project_id); }
+function hasDirty() { return Object.keys(S.dirtyTodos).length>0; }
+
+// ── Load ───────────────────────────────────────────────────────
+async function loadData() {
+  set({ loading:true, error:null });
+  try {
+    const [projects, todos, ideas] = await Promise.all([
+      sbGet('projects', 'order=created_at.asc'),
+      sbGet('todos', 'order=created_at.asc'),
+      sbGet('ideas', 'order=created_at.asc'),
+    ]);
+    set({ loading:false, projects, todos, ideas,
+      selectedId: S.selectedId||(projects[0]?.id),
+      localTodos:{}, dirtyTodos:{},
+    });
+  } catch(e){ set({ loading:false, error:e.message }); }
+}
+
+// ── Write operations ───────────────────────────────────────────
+async function saveTodos() {
+  if (!hasDirty()) return;
+  set({ saving:true });
+  const ids = Object.keys(S.dirtyTodos);
+  await Promise.all(ids.map(id => sbPatch('todos', id, { done: S.localTodos[id] })));
+  await loadData();
+  set({ saving:false });
+  showToast('✓ 已儲存');
+}
+
+async function addTodo(projectId, content) {
+  if (!content.trim()) return;
+  set({ saving:true });
+  await sbPost('todos', { id:'t'+Date.now(), project_id:projectId, content:content.trim(), priority:'medium', done:false });
+  await loadData();
+  set({ saving:false, newTodoText:'' });
+  showToast('✓ 任務已新增');
+}
+
+async function addIdea(projectId, content) {
+  if (!content.trim()) return;
+  set({ saving:true });
+  await sbPost('ideas', { id:'i'+Date.now(), project_id:projectId||null, content:content.trim() });
+  await loadData();
+  set({ saving:false, newIdeaText:'', globalText:'' });
+  showToast('✓ 靈感已記錄');
+}
+
+async function updateProject(id, patch) {
+  set({ saving:true });
+  await sbPatch('projects', id, patch);
+  await loadData();
+  set({ saving:false });
+}
+
+async function addProject(data) {
+  set({ saving:true });
+  await sbPost('projects', { id:'proj'+Date.now(), ...data });
+  await loadData();
+  set({ saving:false, showNewProj:false, newProj:{ name:'', subtitle:'', tags:'', color:'#6366f1' } });
+  showToast('✓ 專案已建立');
+}
+
+// ── AI ─────────────────────────────────────────────────────────
+async function sendChat() {
+  const input = S.chatInput.trim();
+  if (!input||S.chatLoading) return;
+  const project = S.projects.find(p=>p.id===S.aiProjectId);
+  const todos = project ? getProjectTodos(project.id) : [];
+  const msgs = [...S.chatMessages,{ role:'user', text:input }];
+  set({ chatMessages:msgs, chatInput:'', chatLoading:true });
+  const ctx = project
+    ? `你是專業技術專案助理。專案：「${project.name}」${project.subtitle}
+技術：${project.tags} | 進度：${project.progress}% | 狀態：${STATUS[project.status]?.label}
+未完成任務：\n${todos.filter(t=>!t.done).map(t=>`- [${t.priority}] ${t.content}`).join('\n')||'（無）'}
+請用繁體中文，具體實用地回答。`
+    : `你是專業技術專案助理，協助管理：\n${S.projects.map(p=>`• ${p.name}（${STATUS[p.status]?.label}，${p.progress}%）`).join('\n')}\n請用繁體中文回答。`;
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:1000, system:ctx,
+        messages:msgs.slice(-6).map(m=>({ role:m.role==='assistant'?'assistant':'user', content:m.text })) }),
+    });
+    const data = await res.json();
+    const reply = data.content?.find(b=>b.type==='text')?.text||'（無回應）';
+    set({ chatMessages:[...msgs,{role:'assistant',text:reply}], chatLoading:false });
+  } catch { set({ chatMessages:[...msgs,{role:'assistant',text:'⚠️ 連線失敗'}], chatLoading:false }); }
+  setTimeout(()=>document.getElementById('chat-bottom')?.scrollIntoView({behavior:'smooth'}),100);
+}
+
+// ── DOM helpers ────────────────────────────────────────────────
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs||{})) {
+    if (k==='style'&&typeof v==='object') Object.assign(e.style,v);
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(),v);
+    else if (k==='cls') e.className=v;
+    else e.setAttribute(k,v);
+  }
+  for (const c of kids.flat()) {
+    if (c==null||c===false) continue;
+    e.appendChild(typeof c==='string'||typeof c==='number'?document.createTextNode(String(c)):c);
+  }
+  return e;
+}
+function bdg(label, color) {
+  return el('span',{cls:'badge',style:{background:color+'22',color,border:`1px solid ${color}44`}},label);
+}
+function pill(label, color) {
+  return el('span',{cls:'tag-pill',style:{background:color+'22',color,border:`1px solid ${color}44`}},label);
+}
+function btn(label, bg, onClick, disabled) {
+  const b=el('button',{cls:'btn',style:{background:disabled?'#334155':bg}},label);
+  if(disabled) b.disabled=true;
+  else b.addEventListener('click',onClick);
+  return b;
+}
+
+// ── Views ──────────────────────────────────────────────────────
+function renderBoard() {
+  const { projects } = S;
+  const highPri = projects.flatMap(p=>
+    getProjectTodos(p.id).filter(t=>!t.done&&t.priority==='high').map(t=>({...t,pn:p.name,pc:p.color}))
+  );
+  return el('div',{},
+    el('div',{style:{fontSize:20,fontWeight:800,marginBottom:18,color:'#fff'}},'所有專案概覽'),
+    el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14,marginBottom:24}},
+      ...projects.map(p=>{
+        const ptodos = getProjectTodos(p.id);
+        return el('div',{cls:'card',style:{borderLeft:`3px solid ${p.color}`,cursor:'pointer'},onClick:()=>set({selectedId:p.id,view:'detail'})},
+          el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}},
+            el('div',{},
+              el('div',{style:{fontSize:15,fontWeight:800,color:'#fff'}},p.name),
+              el('div',{style:{fontSize:11,color:'#64748b',marginTop:2}},p.subtitle),
+            ),
+            bdg(STATUS[p.status]?.label,STATUS[p.status]?.color||'#64748b'),
+          ),
+          el('div',{style:{marginBottom:10}},
+            el('div',{style:{display:'flex',justifyContent:'space-between',fontSize:11,color:'#94a3b8',marginBottom:4}},
+              el('span',{},'進度'),el('span',{},p.progress+'%'),
+            ),
+            el('div',{style:{height:4,background:'#1e293b',borderRadius:99,overflow:'hidden'}},
+              el('div',{style:{height:'100%',width:p.progress+'%',background:p.color,borderRadius:99}}),
+            ),
+          ),
+          el('div',{style:{display:'flex',gap:5,flexWrap:'wrap',marginBottom:8}},
+            ...(p.tags||'').split(',').map(t=>t.trim()).filter(Boolean).map(t=>pill(t,p.color))
+          ),
+          el('div',{style:{fontSize:11,color:'#64748b'}},
+            `✅ ${ptodos.filter(t=>t.done).length}/${ptodos.length} 任務 · 💡 ${getProjectIdeas(p.id).length} 靈感`
+          ),
+        );
+      })
+    ),
+    el('div',{style:{fontSize:16,fontWeight:800,marginBottom:12,color:'#fff'}},'🔥 高優先待辦'),
+    highPri.length===0
+      ? el('div',{style:{color:'#475569',fontSize:13}},'沒有高優先待辦，太棒了！')
+      : el('div',{},...highPri.map(t=>
+          el('div',{cls:'card',style:{padding:'11px 15px',display:'flex',alignItems:'center',gap:10,marginBottom:8}},
+            el('div',{cls:'dot',style:{background:t.pc}}),
+            el('span',{style:{fontSize:12,color:t.pc,fontWeight:700,minWidth:56}},t.pn),
+            el('span',{style:{fontSize:13.5,color:'#e2e8f0',flex:1}},t.content),
+            bdg('高優先','#ef4444'),
+          )
+        )),
+  );
+}
+
+function renderDetail() {
+  const p = S.projects.find(x=>x.id===S.selectedId);
+  if (!p) return el('div',{style:{color:'#64748b'}},'請先選擇一個專案');
+  const ptodos = getProjectTodos(p.id);
+  const pideas = getProjectIdeas(p.id);
+  const dirty = hasDirty();
+
+  const statusSel = el('select',{cls:'inp',style:{width:'auto'}});
+  for (const [k,v] of Object.entries(STATUS)){
+    const opt=document.createElement('option');
+    opt.value=k; opt.textContent=v.label;
+    if(k===p.status) opt.selected=true;
+    statusSel.appendChild(opt);
+  }
+  statusSel.addEventListener('change',e=>updateProject(p.id,{status:e.target.value}));
+
+  const pctLabel = el('span',{style:{fontWeight:800,color:p.color,fontSize:18,minWidth:36}},p.progress+'%');
+  const slider = el('input',{type:'range',min:0,max:100,value:p.progress,style:{flex:1,accentColor:p.color}});
+  slider.addEventListener('input',e=>{ pctLabel.textContent=e.target.value+'%'; });
+  slider.addEventListener('change',e=>updateProject(p.id,{progress:+e.target.value}));
+
+  const todoInp = el('input',{cls:'inp',placeholder:'輸入任務內容...'});
+  todoInp.value=S.newTodoText;
+  todoInp.addEventListener('input',e=>{ S.newTodoText=e.target.value; });
+  const addTodoBtn = btn('+ 新增','#6366f1',()=>{ addTodo(p.id,S.newTodoText); },S.saving);
+  todoInp.addEventListener('keydown',e=>{ if(e.key==='Enter') addTodoBtn.click(); });
+
+  const ideaInp = el('input',{cls:'inp',placeholder:'新靈感 / 功能構想...'});
+  ideaInp.value=S.newIdeaText;
+  ideaInp.addEventListener('input',e=>{ S.newIdeaText=e.target.value; });
+  const addIdeaBtn = btn('💡 記下','#f59e0b',()=>{ addIdea(p.id,S.newIdeaText); },S.saving);
+  ideaInp.addEventListener('keydown',e=>{ if(e.key==='Enter') addIdeaBtn.click(); });
+
+  return el('div',{},
+    el('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:20,flexWrap:'wrap'}},
+      el('div',{cls:'dot',style:{background:p.color,width:11,height:11}}),
+      el('div',{},
+        el('div',{style:{fontSize:20,fontWeight:800,color:'#fff'}},p.name),
+        el('div',{style:{fontSize:12,color:'#64748b'}},p.subtitle),
+      ),
+      el('div',{style:{marginLeft:'auto',display:'flex',gap:8,flexWrap:'wrap'}},
+        statusSel,
+        btn('🤖 問 AI','#6366f1',()=>set({aiProjectId:p.id,view:'ai',chatMessages:[{role:'assistant',text:`已載入「${p.name}」。\n可以問我：\n• 下一步先做什麼？\n• 幫我整理 TODO\n• 這個功能怎麼實作？`}]})),
+      ),
+    ),
+    el('div',{cls:'card'},
+      el('div',{cls:'sec-title'},'整體進度'),
+      el('div',{style:{display:'flex',alignItems:'center',gap:14}},slider,pctLabel),
+    ),
+    el('div',{cls:'card'},
+      el('div',{cls:'sec-title'},'任務清單'),
+      dirty?el('div',{cls:'save-bar'},
+        el('span',{style:{fontSize:13,color:'#f59e0b'}},'✏️ 有未儲存的變更'),
+        btn('✓ 儲存變更','#10b981',saveTodos,S.saving),
+      ):null,
+      ...ptodos.map(t=>{
+        const cb=el('input',{type:'checkbox',style:{marginTop:3,accentColor:p.color}});
+        cb.checked=t.done;
+        cb.addEventListener('change',()=>{
+          S.localTodos[t.id]=!t.done;
+          S.dirtyTodos[t.id]=true;
+          render();
+        });
+        return el('div',{cls:'todo-row'},
+          cb,
+          el('span',{style:{flex:1,fontSize:13.5,color:t.done?'#475569':'#e2e8f0',textDecoration:t.done?'line-through':'none'}},
+            t.content,
+            t.isDirty?el('span',{style:{color:'#f59e0b',fontSize:11,marginLeft:6}},'●'):null,
+          ),
+          bdg(PRI_LABEL[t.priority]||t.priority,PRI_COLOR[t.priority]||'#64748b'),
+        );
+      }),
+      el('div',{style:{marginTop:14,paddingTop:14,borderTop:'1px solid #1e293b'}},
+        el('div',{cls:'sec-title'},'新增任務'),
+        el('div',{cls:'row'},todoInp,addTodoBtn),
+      ),
+    ),
+    el('div',{cls:'card'},
+      el('div',{cls:'sec-title'},'💡 靈感 / 想法'),
+      pideas.length===0?el('div',{style:{color:'#475569',fontSize:13,marginBottom:10}},'還沒有靈感，快記下來！'):null,
+      ...pideas.map(i=>el('div',{cls:'idea-item',style:{borderLeft:`2px solid ${p.color}`,marginBottom:6}},
+        el('div',{style:{fontSize:13.5,color:'#e2e8f0'}},i.content),
+        el('div',{style:{fontSize:11,color:'#475569',marginTop:3}},new Date(i.created_at).toLocaleString('zh-TW')),
+      )),
+      el('div',{style:{marginTop:10}},
+        el('div',{cls:'sec-title'},'新增靈感'),
+        el('div',{cls:'row'},ideaInp,addIdeaBtn),
+      ),
+    ),
+  );
+}
+
+function renderAI() {
+  const { projects, aiProjectId, chatMessages, chatLoading } = S;
+  setTimeout(()=>document.getElementById('chat-bottom')?.scrollIntoView(),50);
+  const chatInp=el('input',{cls:'inp',placeholder:aiProjectId?`問關於「${S.projects.find(p=>p.id===aiProjectId)?.name}」的問題...`:'問任何問題...'});
+  chatInp.value=S.chatInput;
+  chatInp.addEventListener('input',e=>{ S.chatInput=e.target.value; });
+  chatInp.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey) sendChat(); });
+  return el('div',{style:{display:'flex',flexDirection:'column',height:'calc(100vh - 130px)'}},
+    el('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:14,flexWrap:'wrap'}},
+      el('div',{style:{fontSize:20,fontWeight:800,color:'#fff'}},'🤖 AI 助理'),
+      (()=>{ const b=el('button',{cls:'nb'+(aiProjectId?'':' active')},'全部'); b.addEventListener('click',()=>set({aiProjectId:null,chatMessages:[{role:'assistant',text:'你好！選擇一個專案，或直接問我任何問題。'}]})); return b; })(),
+      ...projects.map(p=>{ const b=el('button',{cls:'nb'+(aiProjectId===p.id?' active':''),style:{background:aiProjectId===p.id?p.color:'transparent',color:aiProjectId===p.id?'#fff':'#64748b'}},p.name); b.addEventListener('click',()=>set({aiProjectId:p.id,chatMessages:[{role:'assistant',text:`已載入「${p.name}」。\n可以問我：\n• 下一步先做什麼？\n• 幫我整理 TODO`}]})); return b; }),
+    ),
+    el('div',{cls:'card',style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',padding:0}},
+      el('div',{cls:'chat-msgs',id:'chat-msgs'},
+        ...chatMessages.map(m=>el('div',{cls:'bubble '+(m.role==='user'?'user':'ai')},m.text)),
+        chatLoading?el('div',{cls:'dots'},...[0,1,2].map(i=>el('div',{cls:'dot-bounce',style:{animation:`bounce 1s ${i*0.2}s infinite`}}))):null,
+        el('div',{id:'chat-bottom'}),
+      ),
+      el('div',{cls:'chat-input-row'},chatInp,btn('送出','#6366f1',sendChat,chatLoading)),
+    ),
+  );
+}
+
+function renderIdeas() {
+  const gIdeas=getGlobalIdeas();
+  const gta=el('textarea',{cls:'inp',placeholder:'任何新想法...',rows:2,style:{resize:'none',marginBottom:8}});
+  gta.value=S.globalText;
+  gta.addEventListener('input',e=>{ S.globalText=e.target.value; });
+  return el('div',{},
+    el('div',{style:{fontSize:20,fontWeight:800,marginBottom:18,color:'#fff'}},'💡 靈感庫'),
+    el('div',{cls:'card'},
+      el('div',{cls:'sec-title'},'快速記靈感'),
+      gta,
+      btn('記下來 💡','#f59e0b',()=>{ addIdea(null,S.globalText); },S.saving),
+    ),
+    gIdeas.length>0?el('div',{cls:'card'},
+      el('div',{cls:'sec-title'},'未分配靈感'),
+      ...gIdeas.map(i=>el('div',{cls:'idea-item',style:{borderLeft:'2px solid #f59e0b',marginBottom:6}},
+        el('div',{style:{fontSize:13.5,color:'#e2e8f0'}},i.content),
+        el('div',{style:{fontSize:11,color:'#475569',marginTop:3}},new Date(i.created_at).toLocaleString('zh-TW')),
+      )),
+    ):null,
+    ...S.projects.filter(p=>getProjectIdeas(p.id).length>0).map(p=>el('div',{cls:'card'},
+      el('div',{cls:'sec-title',style:{color:p.color}},p.name+' 的靈感'),
+      ...getProjectIdeas(p.id).map(i=>el('div',{cls:'idea-item',style:{borderLeft:`2px solid ${p.color}`,marginBottom:6}},
+        el('div',{style:{fontSize:13.5,color:'#e2e8f0'}},i.content),
+        el('div',{style:{fontSize:11,color:'#475569',marginTop:3}},new Date(i.created_at).toLocaleString('zh-TW')),
+      )),
+    )),
+  );
+}
+
+// ── Render ─────────────────────────────────────────────────────
+function render() {
+  const app=document.getElementById('app');
+  app.innerHTML='';
+  const { loading, error, projects, selectedId, view, saving, showNewProj, newProj, globalText } = S;
+
+  if (loading) {
+    app.appendChild(el('div',{cls:'loading-screen'},el('div',{cls:'spinner'}),el('div',{style:{color:'#64748b'}},'正在連線 Supabase...')));
+    return;
+  }
+  if (error) {
+    app.appendChild(el('div',{cls:'loading-screen'},
+      el('div',{style:{fontSize:32}},'⚠️'),
+      el('div',{style:{fontSize:16,color:'#ef4444'}},error),
+      btn('重試','#6366f1',loadData),
+    )); return;
+  }
+
+  app.appendChild(el('header',{},
+    el('div',{},
+      el('div',{cls:'logo'},'⚡ 專案指揮中心'),
+      el('div',{cls:'logo-sub'},saving?'⟳ 儲存中...':`✓ Supabase 連線中 · ${projects.length} 個專案`),
+    ),
+    el('nav',{},
+      ...[['board','看板'],['detail','詳情'],['ai','🤖 AI'],['ideas','💡 靈感']].map(([v,l])=>{
+        const b=el('button',{cls:'nb'+(view===v?' active':'')},l);
+        b.addEventListener('click',()=>set({view:v})); return b;
+      }),
+      (()=>{ const b=el('button',{cls:'nb',title:'重新整理'},'↻'); b.addEventListener('click',loadData); return b; })(),
+    ),
+  ));
+
+  const body=el('div',{cls:'body'});
+  const sb=el('div',{cls:'sidebar'});
+  sb.appendChild(el('div',{cls:'sec-title'},'我的專案'));
+  for (const p of projects) {
+    const ptodos=getProjectTodos(p.id);
+    const isActive=selectedId===p.id;
+    const card=el('div',{cls:'proj-card',style:{background:isActive?p.color+'22':'transparent',border:`1px solid ${isActive?p.color+'55':'transparent'}`}},
+      el('div',{style:{display:'flex',alignItems:'center',gap:7,marginBottom:3}},
+        el('div',{cls:'dot',style:{background:p.color}}),
+        el('span',{style:{fontSize:13,fontWeight:700,color:'#f1f5f9'}},p.name),
+      ),
+      el('div',{cls:'progress-bar'},el('div',{cls:'progress-fill',style:{width:p.progress+'%',background:p.color}})),
+      el('div',{style:{display:'flex',justifyContent:'space-between',paddingLeft:14}},
+        bdg(STATUS[p.status]?.label,STATUS[p.status]?.color||'#64748b'),
+        el('span',{style:{fontSize:11,color:'#64748b'}},`${ptodos.filter(t=>t.done).length}/${ptodos.length}`),
+      ),
+    );
+    card.addEventListener('click',()=>set({selectedId:p.id,view:'detail'}));
+    sb.appendChild(card);
+  }
+  const apb=el('button',{cls:'btn',style:{background:'#1e293b',color:'#94a3b8',width:'100%',marginTop:4}},'+ 新增專案');
+  apb.addEventListener('click',()=>set({showNewProj:true}));
+  sb.appendChild(apb);
+  const gta=el('textarea',{cls:'inp',placeholder:'任何新想法...',rows:2,style:{resize:'none',marginBottom:8}});
+  gta.value=globalText;
+  gta.addEventListener('input',e=>{ S.globalText=e.target.value; });
+  sb.appendChild(el('div',{style:{marginTop:18,paddingTop:14,borderTop:'1px solid #1e293b'}},
+    el('div',{cls:'sec-title'},'⚡ 快速記靈感'),
+    gta,
+    btn('記下來 💡','#f59e0b',()=>{ addIdea(null,S.globalText); },saving),
+  ));
+  body.appendChild(sb);
+
+  const main=el('div',{cls:'main'});
+  if(view==='board')  main.appendChild(renderBoard());
+  if(view==='detail') main.appendChild(renderDetail());
+  if(view==='ai')     main.appendChild(renderAI());
+  if(view==='ideas')  main.appendChild(renderIdeas());
+  body.appendChild(main);
+  app.appendChild(body);
+
+  if (showNewProj) {
+    const fields=[{l:'專案名稱',k:'name',p:'例：API 整合系統'},{l:'副標題',k:'subtitle',p:'例：FastAPI + PostgreSQL'},{l:'標籤（逗號分隔）',k:'tags',p:'例：Python, React'}];
+    app.appendChild(el('div',{cls:'modal-bg'},
+      el('div',{cls:'modal'},
+        el('div',{style:{fontSize:17,fontWeight:800,color:'#fff',marginBottom:16}},'新增專案'),
+        ...fields.map(({l,k,p})=>el('div',{style:{marginBottom:10}},
+          el('div',{style:{fontSize:12,color:'#94a3b8',marginBottom:4}},l),
+          (()=>{ const i=el('input',{cls:'inp',placeholder:p}); i.value=newProj[k]; i.addEventListener('input',e=>{S.newProj[k]=e.target.value;}); return i; })(),
+        )),
+        el('div',{style:{marginBottom:14}},
+          el('div',{style:{fontSize:12,color:'#94a3b8',marginBottom:4}},'顏色'),
+          (()=>{ const i=el('input',{type:'color'}); i.value=newProj.color; i.addEventListener('input',e=>{S.newProj.color=e.target.value;}); return i; })(),
+        ),
+        el('div',{cls:'row'},
+          btn('建立','#6366f1',()=>{ if(!S.newProj.name.trim()) return; addProject({name:S.newProj.name,subtitle:S.newProj.subtitle,tags:S.newProj.tags,color:S.newProj.color,status:'active',progress:0}); },saving),
+          btn('取消','#334155',()=>set({showNewProj:false})),
+        ),
+      ),
+    ));
+  }
+}
+
+render();
+loadData();
+</script>
+</body>
+</html>
