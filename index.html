@@ -99,7 +99,7 @@ let S = {
   newTodoText:'',newIdeaText:'',globalText:'',
   showNewProj:false,newProj:{name:'',subtitle:'',tags:'',color:'#6366f1'},
   chatMessages:[],chatInput:'',chatLoading:false,
-  ideaAnalyzing:false,ideaAnalysis:null,
+  ideaAnalyzing:false,ideaAnalysis:null,editingIdeaId:null,editingIdeaText:'',
 };
 
 function set(p){ Object.assign(S,typeof p==='function'?p(S):p); render(); }
@@ -163,6 +163,23 @@ async function addIdea(projectId,content){
   set({saving:false,newIdeaText:'',globalText:''});
   showToast('靈感已記錄');
 }
+async function deleteIdea(id){
+  set({saving:true});
+  await fetch(API+'/ideas/'+id,{method:'DELETE',headers:H});
+  await loadData();
+  set({saving:false});
+  showToast('已刪除');
+}
+
+async function updateIdea(id,content){
+  if(!content||!content.trim()) return;
+  set({saving:true});
+  await fetch(API+'/ideas/'+id,{method:'PATCH',headers:H,body:JSON.stringify({content:content.trim()})});
+  await loadData();
+  set({saving:false,editingIdeaId:null,editingIdeaText:''});
+  showToast('靈感已更新');
+}
+
 async function updateProject(id,patch){
   set({saving:true});
   await sbPatch('projects',id,patch);
@@ -217,7 +234,10 @@ async function analyzeIdea(ideaText){
     var data=await res.json();
     var raw=(data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts&&data.candidates[0].content.parts[0]&&data.candidates[0].content.parts[0].text)||'';
     var clean=raw.replace(/```json/g,'').replace(/```/g,'').trim();
-    var analysis=JSON.parse(clean);
+    // Find JSON object in response
+    var jsonMatch=clean.match(/\{[\s\S]*\}/);
+    if(!jsonMatch) throw new Error('No JSON found');
+    var analysis=JSON.parse(jsonMatch[0]);
     set({ideaAnalyzing:false,ideaAnalysis:analysis});
   } catch(e){
     set({ideaAnalyzing:false,ideaAnalysis:{summary:'分析失敗，靈感已儲存',action:'just_note',reason:e.message}});
@@ -530,9 +550,29 @@ function renderIdeas(){
       return el('div',{cls:'card'},
         el('div',{cls:'sec-title',style:{color:p.color}},p.name+' 的靈感'),
         getProjectIdeas(p.id).map(function(i){
-          return el('div',{cls:'idea-item',style:{borderLeft:'2px solid '+p.color,marginBottom:6}},
-            el('div',{style:{fontSize:13.5,color:'#e2e8f0'}},i.content),
-            el('div',{style:{fontSize:11,color:'#475569',marginTop:3}},new Date(i.created_at).toLocaleString('zh-TW')),
+          var isEditing2=S.editingIdeaId===i.id;
+          if(isEditing2){
+            var ei2=el('input',{cls:'inp',style:{marginBottom:8}});
+            ei2.value=S.editingIdeaText;
+            ei2.addEventListener('input',function(e){S.editingIdeaText=e.target.value;});
+            ei2.addEventListener('keydown',function(e){if(e.key==='Enter')updateIdea(i.id,S.editingIdeaText);if(e.key==='Escape')set({editingIdeaId:null});});
+            return el('div',{cls:'idea-item',style:{borderLeft:'2px solid '+p.color,marginBottom:6}},
+              ei2,
+              el('div',{style:{display:'flex',gap:6}},
+                btn('儲存','#10b981',function(){updateIdea(i.id,S.editingIdeaText);}),
+                btn('取消','#334155',function(){set({editingIdeaId:null});}),
+              ),
+            );
+          }
+          return el('div',{cls:'idea-item',style:{borderLeft:'2px solid '+p.color,marginBottom:6,display:'flex',alignItems:'flex-start',gap:8}},
+            el('div',{style:{flex:1}},
+              el('div',{style:{fontSize:13.5,color:'#e2e8f0'}},i.content),
+              el('div',{style:{fontSize:11,color:'#475569',marginTop:3}},new Date(i.created_at).toLocaleString('zh-TW')),
+            ),
+            el('div',{style:{display:'flex',gap:4,flexShrink:0}},
+              (function(ii,ic){var b=el('button',{style:{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:14,padding:'2px 5px'}},'✏️');b.addEventListener('click',function(){set({editingIdeaId:ii,editingIdeaText:ic});});return b;})(i.id,i.content),
+              (function(ii){var b=el('button',{style:{background:'none',border:'none',color:'#475569',cursor:'pointer',fontSize:14,padding:'2px 5px'}},'🗑️');b.addEventListener('click',function(){if(confirm('確定刪除？'))deleteIdea(ii);});return b;})(i.id),
+            ),
           );
         }),
       );
