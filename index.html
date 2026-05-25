@@ -224,20 +224,25 @@ async function analyzeIdea(ideaText){
   if(!ideaText||!ideaText.trim()) return;
   await addIdea(null,ideaText);
   set({ideaAnalyzing:true,ideaAnalysis:null,globalText:''});
-  var projectList=S.projects.map(function(p){return '• id:'+p.id+' 名稱:'+p.name+'（'+p.subtitle+'）';}).join('\n');
-  var prompt='你是專案管理助理，幫用戶分析新靈感。\n\n用戶現有專案：\n'+projectList+'\n\n新靈感：「'+ideaText+'」\n\n請分析並只回覆一個 JSON 物件，不要任何其他文字：\n{"summary":"一句話總結","action":"new_project或add_to_existing或just_note","reason":"建議原因30字內","project_name":"新專案名稱","project_subtitle":"新專案副標題","project_tags":"標籤逗號分隔","project_color":"#hex顏色","existing_project_id":"既有專案id","suggested_todos":["任務1","任務2","任務3"]}';
+  var projectList=S.projects.map(function(p){return p.id+'|'+p.name+'|'+p.subtitle;}).join('; ');
+  var prompt='現有專案：'+projectList+'\n\n新靈感：'+ideaText+'\n\n請只輸出一個JSON，格式如下（不要markdown，不要解釋）：{"summary":"總結","action":"new_project","reason":"原因","project_name":"名稱","project_subtitle":"副標題","project_tags":"tag1,tag2","project_color":"#6366f1","existing_project_id":"","suggested_todos":["任務1","任務2"]}\n\naction只能是new_project、add_to_existing、just_note其中一個。若是add_to_existing則填existing_project_id。';
   try {
     var res=await fetch(GEMINI_URL,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:800,temperature:0.5}}),
+      body:JSON.stringify({
+        contents:[{role:'user',parts:[{text:prompt}]}],
+        generationConfig:{maxOutputTokens:600,temperature:0.3,responseMimeType:'application/json'}
+      }),
     });
     var data=await res.json();
-    var raw=(data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts&&data.candidates[0].content.parts[0]&&data.candidates[0].content.parts[0].text)||'';
+    var raw='';
+    try{ raw=data.candidates[0].content.parts[0].text; }catch(e2){ raw=''; }
+    if(!raw) throw new Error('Gemini 無回應');
     var clean=raw.replace(/```json/g,'').replace(/```/g,'').trim();
-    // Find JSON object in response
-    var jsonMatch=clean.match(/\{[\s\S]*\}/);
-    if(!jsonMatch) throw new Error('No JSON found');
-    var analysis=JSON.parse(jsonMatch[0]);
+    var start=clean.indexOf('{');
+    var end=clean.lastIndexOf('}');
+    if(start===-1||end===-1) throw new Error('找不到JSON');
+    var analysis=JSON.parse(clean.slice(start,end+1));
     set({ideaAnalyzing:false,ideaAnalysis:analysis});
   } catch(e){
     set({ideaAnalyzing:false,ideaAnalysis:{summary:'分析失敗，靈感已儲存',action:'just_note',reason:e.message}});
