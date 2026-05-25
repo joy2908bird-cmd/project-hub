@@ -72,7 +72,7 @@
 <div id="app"></div>
 <script>
 const API = 'https://jolly-glitter-1f89.joy2908bird.workers.dev';
-const GEMINI_URL = API + '/gemini';
+const AI_URL = API + '/ai';
 
 const STATUS = {
   active:{label:'進行中',color:'#10b981'},
@@ -205,14 +205,14 @@ async function sendChat(){
   const sysPrompt = project
     ? '你是專業技術專案助理。專案：「'+project.name+'」'+project.subtitle+'\n技術：'+project.tags+' | 進度：'+project.progress+'% | 狀態：'+(STATUS[project.status]&&STATUS[project.status].label)+'\n未完成任務：\n'+todos.filter(function(t){return !t.done;}).map(function(t){return '- ['+t.priority+'] '+t.content;}).join('\n')+'\n請用繁體中文，具體實用地回答。'
     : '你是專業技術專案助理，協助管理：\n'+S.projects.map(function(p){return '• '+p.name+'（'+(STATUS[p.status]&&STATUS[p.status].label)+'，'+p.progress+'%）';}).join('\n')+'\n請用繁體中文回答。';
-  const history=msgs.slice(-6).map(function(m){return {role:m.role==='assistant'?'model':'user',parts:[{text:m.text}]};});
+  const messages=[{role:'system',content:sysPrompt}].concat(msgs.slice(-6).map(function(m){return {role:m.role==='assistant'?'assistant':'user',content:m.text};}));
   try {
-    const res=await fetch(GEMINI_URL,{
+    const res=await fetch(AI_URL,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({system_instruction:{parts:[{text:sysPrompt}]},contents:history,generationConfig:{maxOutputTokens:1000,temperature:0.7}}),
+      body:JSON.stringify({model:'gpt-4o-mini',messages:messages,max_tokens:1000,temperature:0.7}),
     });
     const data=await res.json();
-    const reply=(data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts&&data.candidates[0].content.parts[0]&&data.candidates[0].content.parts[0].text)||'（無回應）';
+    const reply=(data.choices&&data.choices[0]&&data.choices[0].message&&data.choices[0].message.content)||'（無回應）';
     set({chatMessages:[...msgs,{role:'assistant',text:reply}],chatLoading:false});
   } catch(e){ set({chatMessages:[...msgs,{role:'assistant',text:'連線失敗：'+e.message}],chatLoading:false}); }
   setTimeout(function(){var el=document.getElementById('chat-bottom');if(el)el.scrollIntoView({behavior:'smooth'});},100);
@@ -226,17 +226,14 @@ async function analyzeIdea(ideaText){
   var projectList=S.projects.map(function(p){return p.id+'|'+p.name+'|'+p.subtitle;}).join('; ');
   var prompt='現有專案：'+projectList+'\n\n新靈感：'+ideaText+'\n\n請只輸出一個JSON，格式如下（不要markdown，不要解釋）：{"summary":"總結","action":"new_project","reason":"原因","project_name":"名稱","project_subtitle":"副標題","project_tags":"tag1,tag2","project_color":"#6366f1","existing_project_id":"","suggested_todos":["任務1","任務2"]}\n\naction只能是new_project、add_to_existing、just_note其中一個。若是add_to_existing則填existing_project_id。';
   try {
-    var res=await fetch(GEMINI_URL,{
+    var res=await fetch(AI_URL,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        contents:[{role:'user',parts:[{text:prompt}]}],
-        generationConfig:{maxOutputTokens:600,temperature:0.3}
-      }),
+      body:JSON.stringify({model:'gpt-4o-mini',messages:[{role:'system',content:'你是專案管理助理，只輸出JSON，不要任何其他文字。'},{role:'user',content:prompt}],max_tokens:600,temperature:0.3,response_format:{type:'json_object'}}),
     });
     var data=await res.json();
     var raw='';
-    try{ raw=data.candidates[0].content.parts[0].text; }catch(e2){ raw=''; }
-    if(!raw) throw new Error('Gemini 無回應');
+    try{ raw=data.choices[0].message.content; }catch(e2){ raw=''; }
+    if(!raw) throw new Error('OpenAI 無回應');
     var clean=raw.replace(/```json/g,'').replace(/```/g,'').trim();
     var start=clean.indexOf('{');
     var end=clean.lastIndexOf('}');
