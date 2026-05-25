@@ -104,6 +104,7 @@ let S = {
   newTodoText:'', newIdeaText:'', globalText:'',
   showNewProj:false, newProj:{ name:'', subtitle:'', tags:'', color:'#6366f1' },
   chatMessages:[], chatInput:'', chatLoading:false,
+  ideaAnalyzing:false, ideaAnalysis:null, lastIdea:'',
 };
 function set(patch) {
   Object.assign(S, typeof patch==='function'?patch(S):patch);
@@ -190,6 +191,9 @@ async function addProject(data) {
 }
 
 // ── AI ─────────────────────────────────────────────────────────
+const GEMINI_KEY = 'AIzaSyB4UNKxRgdyvkm0tF0kO5R_jsMtZGEMpKY';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
+
 async function sendChat() {
   const input = S.chatInput.trim();
   if (!input||S.chatLoading) return;
@@ -197,22 +201,41 @@ async function sendChat() {
   const todos = project ? getProjectTodos(project.id) : [];
   const msgs = [...S.chatMessages,{ role:'user', text:input }];
   set({ chatMessages:msgs, chatInput:'', chatLoading:true });
-  const ctx = project
+
+  const sysPrompt = project
     ? `你是專業技術專案助理。專案：「${project.name}」${project.subtitle}
 技術：${project.tags} | 進度：${project.progress}% | 狀態：${STATUS[project.status]?.label}
-未完成任務：\n${todos.filter(t=>!t.done).map(t=>`- [${t.priority}] ${t.content}`).join('\n')||'（無）'}
+未完成任務：
+${todos.filter(t=>!t.done).map(t=>`- [${t.priority}] ${t.content}`).join('
+')||'（無）'}
 請用繁體中文，具體實用地回答。`
-    : `你是專業技術專案助理，協助管理：\n${S.projects.map(p=>`• ${p.name}（${STATUS[p.status]?.label}，${p.progress}%）`).join('\n')}\n請用繁體中文回答。`;
+    : `你是專業技術專案助理，協助管理：
+${S.projects.map(p=>`• ${p.name}（${STATUS[p.status]?.label}，${p.progress}%）`).join('
+')}
+請用繁體中文回答。`;
+
+  // 轉換成 Gemini 格式
+  const history = msgs.slice(-6).map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.text }]
+  }));
+
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:1000, system:ctx,
-        messages:msgs.slice(-6).map(m=>({ role:m.role==='assistant'?'assistant':'user', content:m.text })) }),
+    const res = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: sysPrompt }] },
+        contents: history,
+        generationConfig: { maxOutputTokens: 1000, temperature: 0.7 },
+      }),
     });
     const data = await res.json();
-    const reply = data.content?.find(b=>b.type==='text')?.text||'（無回應）';
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || '（無回應）';
     set({ chatMessages:[...msgs,{role:'assistant',text:reply}], chatLoading:false });
-  } catch { set({ chatMessages:[...msgs,{role:'assistant',text:'⚠️ 連線失敗'}], chatLoading:false }); }
+  } catch(e) {
+    set({ chatMessages:[...msgs,{role:'assistant',text:'⚠️ 連線失敗：'+e.message}], chatLoading:false });
+  }
   setTimeout(()=>document.getElementById('chat-bottom')?.scrollIntoView({behavior:'smooth'}),100);
 }
 
@@ -410,19 +433,162 @@ function renderAI() {
   );
 }
 
+async function analyzeIdea(ideaText) {
+  if (!ideaText.trim()) return;
+  // 先儲存靈感
+  await addIdea(null, ideaText);
+
+  // 讓 Gemini 分析
+  set({ ideaAnalyzing: true, ideaAnalysis: null });
+  const projectList = S.projects.map(p=>`• ${p.name}（${p.subtitle}）`).join('\n');
+  const prompt = `你是專案管理助理，幫用戶分析新靈感。
+
+用戶現有專案：
+${projectList}
+
+新靈感：「${ideaText}」
+
+請分析並用 JSON 格式回覆（只回 JSON，不要其他文字）：
+{
+  "summary": "一句話總結這個靈感",
+  "action": "new_project" 或 "add_to_existing" 或 "just_note",
+  "reason": "建議原因（30字內）",
+  "project_name": "如果是 new_project，建議的專案名稱",
+  "project_subtitle": "如果是 new_project，建議的副標題",
+  "project_tags": "如果是 new_project，建議標籤（逗號分隔）",
+  "project_color": "如果是 new_project，建議顏色（hex）",
+  "existing_project_id": "如果是 add_to_existing，填對應的專案 id",
+  "suggested_todos": ["建議的任務1", "建議的任務2", "建議的任務3"]
+}`;
+
+  try {
+    const res = await fetch(GEMINI_URL, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        contents:[{ role:'user', parts:[{ text: prompt }] }],
+        generationConfig:{ maxOutputTokens:800, temperature:0.5 },
+      }),
+    });
+    const data = await res.json();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const clean = raw.replace(/```json|```/g,'').trim();
+    const analysis = JSON.parse(clean);
+    set({ ideaAnalyzing:false, ideaAnalysis:analysis, lastIdea:ideaText });
+  } catch(e) {
+    set({ ideaAnalyzing:false, ideaAnalysis:{ summary:'分析失敗，請重試', action:'just_note', reason:e.message } });
+  }
+}
+
+async function createFromAnalysis(analysis) {
+  if (analysis.action === 'new_project') {
+    const id = 'proj'+Date.now();
+    await addProject({
+      name: analysis.project_name,
+      subtitle: analysis.project_subtitle||'',
+      tags: analysis.project_tags||'',
+      color: analysis.project_color||'#6366f1',
+      status: 'active',
+      progress: 0,
+    });
+    // 新增建議任務
+    if (analysis.suggested_todos?.length) {
+      await new Promise(r=>setTimeout(r,1000));
+      const newProj = S.projects.find(p=>p.name===analysis.project_name);
+      if (newProj) {
+        for (const todo of analysis.suggested_todos) {
+          await sbPost('todos',{ id:'t'+Date.now(), project_id:newProj.id, content:todo, priority:'medium', done:false });
+          await new Promise(r=>setTimeout(r,300));
+        }
+        await loadData();
+      }
+    }
+    showToast('✓ 新專案已建立！');
+  } else if (analysis.action === 'add_to_existing' && analysis.existing_project_id) {
+    if (analysis.suggested_todos?.length) {
+      for (const todo of analysis.suggested_todos) {
+        await sbPost('todos',{ id:'t'+Date.now(), project_id:analysis.existing_project_id, content:todo, priority:'medium', done:false });
+        await new Promise(r=>setTimeout(r,300));
+      }
+      await loadData();
+    }
+    showToast('✓ 任務已加入專案！');
+  }
+  set({ ideaAnalysis:null, lastIdea:'' });
+}
+
 function renderIdeas() {
   const gIdeas=getGlobalIdeas();
-  const gta=el('textarea',{cls:'inp',placeholder:'任何新想法...',rows:2,style:{resize:'none',marginBottom:8}});
-  gta.value=S.globalText;
-  gta.addEventListener('input',e=>{ S.globalText=e.target.value; });
-  return el('div',{},
-    el('div',{style:{fontSize:20,fontWeight:800,marginBottom:18,color:'#fff'}},'💡 靈感庫'),
-    el('div',{cls:'card'},
-      el('div',{cls:'sec-title'},'快速記靈感'),
-      gta,
-      btn('記下來 💡','#f59e0b',()=>{ addIdea(null,S.globalText); },S.saving),
+  const analysis = S.ideaAnalysis;
+
+  const ta = el('textarea',{cls:'inp',placeholder:'輸入任何新想法、靈感、構思...',rows:3,style:{resize:'none',marginBottom:10}});
+  ta.value = S.globalText||'';
+  ta.addEventListener('input',e=>{ S.globalText=e.target.value; });
+
+  const analyzeBtn = btn(
+    S.ideaAnalyzing ? '🤔 AI 分析中...' : '💡 記下 + AI 分析',
+    '#6366f1',
+    ()=>{ analyzeIdea(S.globalText); S.globalText=''; },
+    S.ideaAnalyzing || S.saving
+  );
+  const saveOnlyBtn = btn('只記下','#334155',()=>{ addIdea(null,S.globalText); S.globalText=''; }, S.saving);
+
+  // AI 分析結果卡
+  const analysisCard = analysis ? el('div',{cls:'card',style:{border:'1px solid #6366f155',marginBottom:16}},
+    el('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+      el('span',{style:{fontSize:16}},'🤖'),
+      el('div',{style:{fontWeight:700,color:'#fff'}}, 'AI 分析結果'),
     ),
-    gIdeas.length>0?el('div',{cls:'card'},
+    el('div',{style:{fontSize:14,color:'#e2e8f0',marginBottom:8}}, analysis.summary),
+    el('div',{style:{fontSize:12,color:'#94a3b8',marginBottom:12}}, analysis.reason),
+
+    // 建議動作
+    analysis.action==='new_project' ? el('div',{},
+      el('div',{style:{background:'#1e293b',borderRadius:10,padding:'12px 14px',marginBottom:12}},
+        el('div',{style:{fontSize:11,color:'#64748b',marginBottom:6}},'建議新建專案'),
+        el('div',{style:{fontSize:15,fontWeight:700,color:'#fff',marginBottom:2}}, analysis.project_name),
+        el('div',{style:{fontSize:12,color:'#94a3b8',marginBottom:8}}, analysis.project_subtitle),
+        analysis.suggested_todos?.length ? el('div',{},
+          el('div',{style:{fontSize:11,color:'#64748b',marginBottom:4}},'建議初始任務'),
+          ...analysis.suggested_todos.map(t=>el('div',{style:{fontSize:13,color:'#e2e8f0',padding:'3px 0'}}, '• '+t)),
+        ):null,
+      ),
+      el('div',{style:{display:'flex',gap:8}},
+        btn('✓ 建立這個專案','#10b981',()=>createFromAnalysis(analysis)),
+        btn('取消','#334155',()=>set({ideaAnalysis:null})),
+      ),
+    ) : analysis.action==='add_to_existing' ? el('div',{},
+      el('div',{style:{background:'#1e293b',borderRadius:10,padding:'12px 14px',marginBottom:12}},
+        el('div',{style:{fontSize:11,color:'#64748b',marginBottom:6}},'建議加入既有專案'),
+        el('div',{style:{fontSize:15,fontWeight:700,color:'#fff',marginBottom:8}},
+          S.projects.find(p=>p.id===analysis.existing_project_id)?.name || analysis.existing_project_id
+        ),
+        analysis.suggested_todos?.length ? el('div',{},
+          el('div',{style:{fontSize:11,color:'#64748b',marginBottom:4}},'建議新增任務'),
+          ...analysis.suggested_todos.map(t=>el('div',{style:{fontSize:13,color:'#e2e8f0',padding:'3px 0'}}, '• '+t)),
+        ):null,
+      ),
+      el('div',{style:{display:'flex',gap:8}},
+        btn('✓ 加入這個專案','#10b981',()=>createFromAnalysis(analysis)),
+        btn('取消','#334155',()=>set({ideaAnalysis:null})),
+      ),
+    ) : el('div',{style:{color:'#94a3b8',fontSize:13}},'已記錄為靈感筆記'),
+  ) : null;
+
+  return el('div',{},
+    el('div',{style:{fontSize:20,fontWeight:800,marginBottom:18,color:'#fff'}},'💡 靈感 × AI'),
+
+    // 輸入區
+    el('div',{cls:'card'},
+      el('div',{cls:'sec-title'},'新靈感輸入'),
+      ta,
+      el('div',{style:{display:'flex',gap:8}}, analyzeBtn, saveOnlyBtn),
+    ),
+
+    // AI 分析結果
+    analysisCard,
+
+    // 已記錄的靈感
+    gIdeas.length>0 ? el('div',{cls:'card'},
       el('div',{cls:'sec-title'},'未分配靈感'),
       ...gIdeas.map(i=>el('div',{cls:'idea-item',style:{borderLeft:'2px solid #f59e0b',marginBottom:6}},
         el('div',{style:{fontSize:13.5,color:'#e2e8f0'}},i.content),
