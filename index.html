@@ -57,8 +57,8 @@
 <body>
 <div id="app"></div>
 <script>
-const SB_URL = 'https://vsqypkiymavrupmxjcb.supabase.co';
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzcXlwa2l5bWF2cnVwZm14amNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2ODA1NzUsImV4cCI6MjA5NTI1NjU3NX0.XftACrJfteJ8Nmxqr-BD_tjGYOX-topRO6-tFrTAKTc';
+const API = 'https://jolly-glitter-1f89.joy2908bird.workers.dev';
+
 
 const STATUS = {
   active:{ label:'進行中', color:'#10b981' },
@@ -70,28 +70,27 @@ const PRI_LABEL = { high:'高', medium:'中', low:'低' };
 const PRI_COLOR = { high:'#ef4444', medium:'#f59e0b', low:'#64748b' };
 
 // ── Supabase API ───────────────────────────────────────────────
-const headers = { 'Content-Type':'application/json', 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY };
 
-async function sbGet(table, query='') {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${query}`, { headers });
+
+const H = {'Content-Type':'application/json'};
+async function sbGet(table) {
+  const r = await fetch(`${API}/${table}`, { headers: H });
   return r.json();
 }
 async function sbPost(table, body) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
-    method:'POST', headers:{ ...headers, 'Prefer':'return=representation' },
-    body: JSON.stringify(body),
+  const r = await fetch(`${API}/${table}`, {
+    method:'POST', headers: H, body: JSON.stringify(body),
   });
   return r.json();
 }
 async function sbPatch(table, id, body) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
-    method:'PATCH', headers:{ ...headers, 'Prefer':'return=representation' },
-    body: JSON.stringify(body),
+  const r = await fetch(`${API}/${table}/${id}`, {
+    method:'PATCH', headers: H, body: JSON.stringify(body),
   });
   return r.json();
 }
 async function sbDelete(table, id) {
-  await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, { method:'DELETE', headers });
+  await fetch(`${API}/${table}/${id}`, { method:'DELETE', headers: H });
 }
 
 // ── State ──────────────────────────────────────────────────────
@@ -133,15 +132,15 @@ async function loadData() {
   set({ loading:true, error:null });
   try {
     const [projects, todos, ideas] = await Promise.all([
-      sbGet('projects', 'order=created_at.asc'),
-      sbGet('todos', 'order=created_at.asc'),
-      sbGet('ideas', 'order=created_at.asc'),
+      sbGet('projects'),
+      sbGet('todos'),
+      sbGet('ideas'),
     ]);
     set({ loading:false, projects, todos, ideas,
       selectedId: S.selectedId||(projects[0]?.id),
       localTodos:{}, dirtyTodos:{},
     });
-  } catch(e){ set({ loading:false, error:e.message }); }
+  } catch(e){ set({ loading:false, error:'連線失敗：'+e.message+' (URL: '+SB_URL+'/rest/v1/projects)' }); }
 }
 
 // ── Write operations ───────────────────────────────────────────
