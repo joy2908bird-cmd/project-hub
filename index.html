@@ -545,9 +545,29 @@ function renderIdeas(){
     gIdeas.length>0?el('div',{cls:'card'},
       el('div',{cls:'sec-title'},'未分配靈感'),
       gIdeas.map(function(i){
-        return el('div',{cls:'idea-item',style:{borderLeft:'2px solid #f59e0b',marginBottom:6}},
-          el('div',{style:{fontSize:13.5,color:'#e2e8f0'}},i.content),
-          el('div',{style:{fontSize:11,color:'#475569',marginTop:3}},new Date(i.created_at).toLocaleString('zh-TW')),
+        var isEditingG=S.editingIdeaId===i.id;
+        if(isEditingG){
+          var egi=el('input',{cls:'inp',style:{marginBottom:8}});
+          egi.value=S.editingIdeaText;
+          egi.addEventListener('input',function(e){S.editingIdeaText=e.target.value;});
+          egi.addEventListener('keydown',function(e){if(e.key==='Enter')updateIdea(i.id,S.editingIdeaText);if(e.key==='Escape')set({editingIdeaId:null});});
+          return el('div',{cls:'idea-item',style:{borderLeft:'2px solid #f59e0b',marginBottom:6}},
+            egi,
+            el('div',{style:{display:'flex',gap:6}},
+              btn('儲存','#10b981',function(){updateIdea(i.id,S.editingIdeaText);}),
+              btn('取消','#334155',function(){set({editingIdeaId:null});}),
+            ),
+          );
+        }
+        return el('div',{cls:'idea-item',style:{borderLeft:'2px solid #f59e0b',marginBottom:6,display:'flex',alignItems:'flex-start',gap:8}},
+          el('div',{style:{flex:1}},
+            el('div',{style:{fontSize:13.5,color:'#e2e8f0'}},i.content),
+            el('div',{style:{fontSize:11,color:'#475569',marginTop:3}},new Date(i.created_at).toLocaleString('zh-TW')),
+          ),
+          el('div',{style:{display:'flex',gap:4,flexShrink:0}},
+            (function(ii,ic){var b=el('button',{style:{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:14,padding:'2px 5px'}},'✏️');b.addEventListener('click',function(){set({editingIdeaId:ii,editingIdeaText:ic});});return b;})(i.id,i.content),
+            (function(ii){var b=el('button',{style:{background:'none',border:'none',color:'#475569',cursor:'pointer',fontSize:14,padding:'2px 5px'}},'🗑️');b.addEventListener('click',function(){if(confirm('確定刪除？'))deleteIdea(ii);});return b;})(i.id),
+          ),
         );
       }),
     ):null,
