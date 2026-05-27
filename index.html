@@ -99,6 +99,7 @@ let S = {
   showNewProj:false,newProj:{name:'',subtitle:'',tags:'',color:'#6366f1'},
   chatMessages:[],chatInput:'',chatLoading:false,
   ideaAnalyzing:false,ideaAnalysis:null,editingIdeaId:null,editingIdeaText:'',
+  editingProjId:null,editingProj:null,
 };
 
 function set(p){ Object.assign(S,typeof p==='function'?p(S):p); render(); }
@@ -192,6 +193,22 @@ async function addProject(data){
   set({saving:false,showNewProj:false,newProj:{name:'',subtitle:'',tags:'',color:'#6366f1'}});
   showToast('專案已建立');
   return r;
+}
+
+async function deleteProject(id){
+  set({saving:true});
+  await fetch(API+'/projects/'+id,{method:'DELETE',headers:H});
+  await loadData();
+  set({saving:false,selectedId:S.projects[0]&&S.projects[0].id});
+  showToast('專案已刪除');
+}
+
+async function deleteTodo(id){
+  set({saving:true});
+  await fetch(API+'/todos/'+id,{method:'DELETE',headers:H});
+  await loadData();
+  set({saving:false});
+  showToast('任務已刪除');
 }
 
 // Gemini AI chat
@@ -312,15 +329,19 @@ function renderBoard(){
   return el('div',{},
     el('div',{style:{fontSize:20,fontWeight:800,marginBottom:18,color:'#fff'}},'所有專案概覽'),
     el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14,marginBottom:24}},
-      projects.map(function(p){
+      projects.filter(function(p){return p.status!=='done';}).map(function(p){
         var pt=getProjectTodos(p.id);
-        var card=el('div',{cls:'card',style:{borderLeft:'3px solid '+p.color,cursor:'pointer'}},
+        var card=el('div',{cls:'card',style:{borderLeft:'3px solid '+p.color}},
           el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}},
-            el('div',{},
+            el('div',{style:{cursor:'pointer',flex:1},onClick:function(){set({selectedId:p.id,view:'detail'});}},
               el('div',{style:{fontSize:15,fontWeight:800,color:'#fff'}},p.name),
               el('div',{style:{fontSize:11,color:'#64748b',marginTop:2}},p.subtitle),
             ),
-            bdg((STATUS[p.status]&&STATUS[p.status].label)||p.status,(STATUS[p.status]&&STATUS[p.status].color)||'#64748b'),
+            el('div',{style:{display:'flex',alignItems:'center',gap:6}},
+              bdg((STATUS[p.status]&&STATUS[p.status].label)||p.status,(STATUS[p.status]&&STATUS[p.status].color)||'#64748b'),
+              (function(pid,pp){var b=el('button',{style:{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:14,padding:'2px 5px'}},'✏️');b.addEventListener('click',function(e){e.stopPropagation();set({editingProjId:pid,editingProj:{name:pp.name,subtitle:pp.subtitle,tags:pp.tags||'',color:pp.color}});});return b;})(p.id,p),
+              (function(pid,pname){var b=el('button',{style:{background:'none',border:'none',color:'#475569',cursor:'pointer',fontSize:14,padding:'2px 5px'}},'🗑️');b.addEventListener('click',function(e){e.stopPropagation();if(confirm('確定刪除「'+pname+'」？此操作無法還原。'))deleteProject(pid);});return b;})(p.id,p.name),
+            ),
           ),
           el('div',{style:{marginBottom:10}},
             el('div',{style:{display:'flex',justifyContent:'space-between',fontSize:11,color:'#94a3b8',marginBottom:4}},el('span',{},'進度'),el('span',{},p.progress+'%')),
@@ -333,7 +354,6 @@ function renderBoard(){
           ),
           el('div',{style:{fontSize:11,color:'#64748b'}},'✅ '+pt.filter(function(t){return t.done;}).length+'/'+pt.length+' 任務 · 💡 '+getProjectIdeas(p.id).length+' 靈感'),
         );
-        card.addEventListener('click',function(){set({selectedId:p.id,view:'detail'});});
         return card;
       })
     ),
@@ -408,12 +428,14 @@ function renderDetail(){
           S.dirtyTodos[t.id]=true;
           render();
         });
+        var delBtn=(function(tid){var b=el('button',{style:{background:'none',border:'none',color:'#475569',cursor:'pointer',fontSize:13,padding:'2px 5px',flexShrink:0}},'🗑️');b.addEventListener('click',function(){if(confirm('確定刪除這個任務？'))deleteTodo(tid);});return b;})(t.id);
         return el('div',{cls:'todo-row'},cb,
           el('span',{style:{flex:1,fontSize:13.5,color:t.done?'#475569':'#e2e8f0',textDecoration:t.done?'line-through':'none'}},
             t.content,
             t.isDirty?el('span',{style:{color:'#f59e0b',fontSize:11,marginLeft:6}},'●'):null,
           ),
           bdg(PRI_LABEL[t.priority]||t.priority,PRI_COLOR[t.priority]||'#64748b'),
+          delBtn,
         );
       }),
       el('div',{style:{marginTop:14,paddingTop:14,borderTop:'1px solid #1e293b'}},
@@ -684,6 +706,38 @@ function render(){
     bnav.appendChild(b);
   });
   app.appendChild(bnav);
+
+  // 編輯專案 modal
+  if(S.editingProjId){
+    var ep=S.editingProj||{};
+    var epFields=[{l:'專案名稱',k:'name',p:'例：API 整合系統'},{l:'副標題',k:'subtitle',p:'例：FastAPI + PostgreSQL'},{l:'標籤（逗號分隔）',k:'tags',p:'例：Python, React'}];
+    app.appendChild(el('div',{cls:'modal-bg'},
+      el('div',{cls:'modal'},
+        el('div',{style:{fontSize:17,fontWeight:800,color:'#fff',marginBottom:16}},'編輯專案'),
+        epFields.map(function(f){
+          return el('div',{style:{marginBottom:10}},
+            el('div',{style:{fontSize:12,color:'#94a3b8',marginBottom:4}},f.l),
+            (function(){var i=el('input',{cls:'inp',placeholder:f.p});i.value=ep[f.k]||'';i.addEventListener('input',function(e){S.editingProj[f.k]=e.target.value;});return i;})(),
+          );
+        }),
+        el('div',{style:{marginBottom:14}},
+          el('div',{style:{fontSize:12,color:'#94a3b8',marginBottom:4}},'顏色'),
+          (function(){var i=el('input',{type:'color'});i.value=ep.color||'#6366f1';i.addEventListener('input',function(e){S.editingProj.color=e.target.value;});return i;})(),
+        ),
+        el('div',{cls:'row'},
+          btn('儲存','#10b981',async function(){
+            if(!S.editingProj.name.trim()) return;
+            set({saving:true});
+            await sbPatch('projects',S.editingProjId,{name:S.editingProj.name,subtitle:S.editingProj.subtitle,tags:S.editingProj.tags,color:S.editingProj.color});
+            await loadData();
+            set({saving:false,editingProjId:null,editingProj:null});
+            showToast('專案已更新');
+          },S.saving),
+          btn('取消','#334155',function(){set({editingProjId:null,editingProj:null});}),
+        ),
+      ),
+    ));
+  }
 
   if(showNewProj){
     var fields=[{l:'專案名稱',k:'name',p:'例：API 整合系統'},{l:'副標題',k:'subtitle',p:'例：FastAPI + PostgreSQL'},{l:'標籤（逗號分隔）',k:'tags',p:'例：Python, React'}];
